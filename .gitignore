@@ -11,3 +11,4 @@ basenji.egg-info/
 bin/tutorials/.ipynb_checkpoints/
 env/
 /env/
+.vscode
