@@ -12,3 +12,4 @@ bin/tutorials/.ipynb_checkpoints/
 env/
 /env/
 .vscode
+.vscode/settings.json
