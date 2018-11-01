@@ -10,3 +10,4 @@ basenji.egg-info/
 */._.DS_Store
 bin/tutorials/.ipynb_checkpoints/
 /env/
+.vscode/settings.json
