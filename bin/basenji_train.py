@@ -158,14 +158,12 @@ def run(params_file, data_file, train_epochs, train_epoch_batches, test_epoch_ba
       shift_i = epoch % len(augment_shifts)
 
       # train
-      #NOTE: !!! CHANGING TO MANUAL !!!
-      print("IN TRAIN EPOCH")
-      train_loss, steps = model.train_epoch_h5_manual(sess, batcher_train, fwdrc=fwdrc,
+
+      train_loss, steps = model.train_epoch_h5(sess, batcher_train, fwdrc=fwdrc,
                                                shift=augment_shifts[shift_i],
                                                sum_writer=train_writer,
                                                epoch_batches=train_epoch_batches,
                                                no_steps=FLAGS.no_steps)
-      print("OUT OF TRAIN EPOCH")
       # validate
       valid_acc = model.test_h5(sess, batcher_valid, mc_n=FLAGS.ensemble_mc,
                                 rc=FLAGS.ensemble_rc, shifts=ensemble_shifts,

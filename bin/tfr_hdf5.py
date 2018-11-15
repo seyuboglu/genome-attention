@@ -41,8 +41,8 @@ def main():
     hdf5_file = args[2]
 
   # read target datasets
-  targets_df = pd.read_table(targets_file, header=None, names=["identifier", "strand", "description"])
-  print(targets_df)
+
+  targets_df = pd.read_table(targets_file)
 
   # write to HDF5
   hdf5_out = h5py.File(hdf5_file, 'w')

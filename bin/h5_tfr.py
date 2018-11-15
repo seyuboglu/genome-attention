@@ -23,7 +23,8 @@ def main():
   usage = 'usage: %prog [options] <h5_file> <tfr_dir>'
   parser = OptionParser(usage)
   parser.add_option('-p', dest='processes',
-      default=8, type='int',
+
+      default=16, type='int',
       help='Number of parallel threads to use [Default: %default]')
   parser.add_option('-s', dest='seqs_per_tfr',
       default=256, type='int',
@@ -48,6 +49,8 @@ def main():
   print("Before")
   h5_open = h5py.File(h5_file, 'r')
   print("After")
+
+  h5_open = h5py.File(h5_file)
 
   for dataset in ['train', 'valid', 'test']:
     # count sequences

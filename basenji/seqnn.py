@@ -509,6 +509,7 @@ class SeqNN(seqnn_util.SeqNNModel):
       batch_sizes.append(Xb.shape[0])
       print('All Other Time %f' % (time.time() - t0))
 
+
       # next batch
       t0 = time.time()
       Xb, Yb, NAb, Nb = batcher.next(fwdrc, shift)
@@ -530,6 +531,7 @@ class SeqNN(seqnn_util.SeqNNModel):
                      no_steps=False):
     """Execute one training epoch using HDF5 data,
        and compute-graph augmentation"""
+
     # initialize training loss
     train_loss = []
     batch_sizes = []
