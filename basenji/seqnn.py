@@ -20,6 +20,7 @@ import time
 
 import numpy as np
 import tensorflow as tf
+from tqdm import tqdm
 
 from basenji import augmentation
 from basenji import layers
@@ -470,7 +471,6 @@ class SeqNN(seqnn_util.SeqNNModel):
                   no_steps=False):
     """Execute one training epoch, using HDF5 data
        and manual augmentation."""
-
     # initialize training loss
     train_loss = []
     batch_sizes = []
@@ -482,8 +482,10 @@ class SeqNN(seqnn_util.SeqNNModel):
     # get first batch
     Xb, Yb, NAb, Nb = batcher.next(fwdrc, shift)
 
-    batch_num = 0
-    while Xb is not None and (epoch_batches is None or batch_num < epoch_batches):
+    for batch_num in tqdm(range(batcher.num_seqs)):
+      t0 = time.time()
+      if Xb is None:
+        break
       # update feed dict
       fd[self.inputs_ph] = Xb
       fd[self.targets_ph] = Yb
@@ -505,10 +507,12 @@ class SeqNN(seqnn_util.SeqNNModel):
       # accumulate loss
       train_loss.append(loss_batch)
       batch_sizes.append(Xb.shape[0])
+      print('All Other Time %f' % (time.time() - t0))
 
       # next batch
+      t0 = time.time()
       Xb, Yb, NAb, Nb = batcher.next(fwdrc, shift)
-      batch_num += 1
+      print('Data Loading Time %f' % (time.time() - t0))
 
     # reset training batcher if epoch considered all of the data
     if epoch_batches is None:
@@ -526,7 +530,6 @@ class SeqNN(seqnn_util.SeqNNModel):
                      no_steps=False):
     """Execute one training epoch using HDF5 data,
        and compute-graph augmentation"""
-
     # initialize training loss
     train_loss = []
     batch_sizes = []

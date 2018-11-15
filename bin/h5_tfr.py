@@ -23,7 +23,7 @@ def main():
   usage = 'usage: %prog [options] <h5_file> <tfr_dir>'
   parser = OptionParser(usage)
   parser.add_option('-p', dest='processes',
-      default=16, type='int',
+      default=8, type='int',
       help='Number of parallel threads to use [Default: %default]')
   parser.add_option('-s', dest='seqs_per_tfr',
       default=256, type='int',
@@ -45,8 +45,9 @@ def main():
 
   # initialize multiprocessing pool
   pool = multiprocessing.Pool(options.processes)
-
-  h5_open = h5py.File(h5_file)
+  print("Before")
+  h5_open = h5py.File(h5_file, 'r')
+  print("After")
 
   for dataset in ['train', 'valid', 'test']:
     # count sequences
@@ -71,7 +72,7 @@ def _bytes_feature(value):
   return tf.train.Feature(bytes_list=tf.train.BytesList(value=[value]))
 
 def writer_worker(tfr_file, tf_opts, h5_file, dataset, shard_i, num_shards):
-  h5_open = h5py.File(h5_file)
+  h5_open = h5py.File(h5_file, 'r')
   data_in = h5_open['%s_in'%dataset]
   data_out = h5_open['%s_out'%dataset]
 
