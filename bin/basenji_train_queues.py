@@ -124,7 +124,6 @@ def run(params_file, train_epochs, train_epoch_batches,
     while (train_epochs is not None and epoch < train_epochs) or \
           (train_epochs is None and early_stop_i < FLAGS.early_stop):
       t0 = time.time()
-      print('The time is currently {}'.format(t0))
 
       # save previous
       train_loss_last = train_loss
@@ -211,9 +210,9 @@ def make_data_ops(job, train_file=None, test_file=None, tfr_dir=None):
       return tfrecord_batcher.tfrecord_dataset(
           pattern,
           job['batch_size'],
-          job.get('seq_length', 131072),
+          job['seq_length'],
           job.get('seq_depth', 4),
-          job.get('target_length', 1024),
+          job['target_length'],
           job['num_targets'],
           mode=mode,
           repeat=False

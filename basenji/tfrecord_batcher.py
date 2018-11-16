@@ -62,7 +62,7 @@ def tfrecord_dataset(tfr_data_files_pattern,
     A Dataset which will produce a dict with the following tensors:
       sequence: [batch_size, sequence_length, seq_depth]
       label: [batch_size, num_targets, target_length]
-      na: [batch_size, num_targets]
+      na: [batch_size, num_targets]`
   """
 
   tfr_files = order_tfrecords(tfr_data_files_pattern)
@@ -120,6 +120,7 @@ def tfrecord_dataset(tfr_data_files_pattern,
     parsed_features = tf.parse_example(example_protos, features=features)
 
     static_batch_size = batch_size if use_static_batch_size else -1
+    print(static_batch_size)
 
     seq = tf.decode_raw(parsed_features[tfrecord_util.TFR_INPUT], tf.uint8)
     seq = tf.reshape(seq, [static_batch_size, seq_length, seq_depth])
