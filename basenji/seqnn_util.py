@@ -6,12 +6,17 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+from time import time
+
 import pdb
 import numpy as np
 import tensorflow as tf
+from tqdm import tqdm
 
 from basenji.dna_io import hot1_augment
 from basenji import accuracy
+from basenji.util import RunningAverage
+
 
 
 class SeqNNModel(object):
@@ -982,7 +987,6 @@ class SeqNNModel(object):
 
     return tss_preds
 
-
   def test_tfr(self, sess, test_batches=None):
     """ Compute model accuracy on a test set, where data is loaded from a queue.
 
@@ -1007,101 +1011,35 @@ class SeqNNModel(object):
     # sequence index
     data_available = True
     batch_num = 0
-    while data_available and (test_batches is None or batch_num < test_batches):
-      try:
-        # make predictions
-        run_ops = [self.targets_eval, self.preds_eval,
-                   self.loss_eval, self.loss_eval_targets]
-        run_returns = sess.run(run_ops, feed_dict=fd)
-        targets_batch, preds_batch, loss_batch, target_losses_batch = run_returns
+    loss_avg = RunningAverage()
 
-        # accumulate predictions and targets
-        preds.append(preds_batch.astype('float16'))
-        targets.append(targets_batch.astype('float16'))
-        targets_na.append(np.zeros([preds_batch.shape[0], self.preds_length], dtype='bool'))
+    with tqdm(total=test_batches) as t:
+      while data_available and (test_batches is None or batch_num < test_batches):
+        try:
+          # make predictions
+          run_ops = [self.targets_eval, self.preds_eval,
+                    self.loss_eval, self.loss_eval_targets]
+          run_returns = sess.run(run_ops, feed_dict=fd)
+          targets_batch, preds_batch, loss_batch, target_losses_batch = run_returns
 
-        # accumulate loss
-        batch_losses.append(loss_batch)
-        batch_target_losses.append(target_losses_batch)
-        batch_sizes.append(preds_batch.shape[0])
+          # accumulate predictions and targets
+          preds.append(preds_batch.astype('float16'))
+          targets.append(targets_batch.astype('float16'))
+          targets_na.append(np.zeros([preds_batch.shape[0], self.preds_length], dtype='bool'))
 
-        batch_num += 1
+          # accumulate loss
+          batch_losses.append(loss_batch)
+          batch_target_losses.append(target_losses_batch)
+          batch_sizes.append(preds_batch.shape[0])
 
-      except tf.errors.OutOfRangeError:
-        data_available = False
+          batch_num += 1
+          loss_avg.update(loss_batch)
+          t.set_postfix(loss='{:05.3f}'.format(loss_avg()))
+          t.update()
 
-    # construct arrays
-    targets = np.concatenate(targets, axis=0)
-    preds = np.concatenate(preds, axis=0)
-    targets_na = np.concatenate(targets_na, axis=0)
 
-    # mean across batches
-    batch_losses = np.array(batch_losses, dtype='float64')
-    batch_losses = np.average(batch_losses, weights=batch_sizes)
-    batch_target_losses = np.array(batch_target_losses, dtype='float64')
-    batch_target_losses = np.average(batch_target_losses, axis=0, weights=batch_sizes)
-
-    # instantiate accuracy object
-    acc = accuracy.Accuracy(targets, preds, targets_na,
-                            batch_losses, batch_target_losses)
-
-    return acc
-
-  def test_h5(self, sess, batcher, test_batches=None):
-    """ Compute model accuracy on a test set.
-
-        Args:
-          sess:         TensorFlow session
-          batcher:      Batcher object to provide data
-          test_batches: Number of test batches
-
-        Returns:
-          acc:          Accuracy object
-        """
-    # setup feed dict
-    fd = self.set_mode('test')
-
-    # initialize prediction and target arrays
-    preds = []
-    targets = []
-    targets_na = []
-
-    batch_losses = []
-    batch_target_losses = []
-    batch_sizes = []
-
-    # get first batch
-    batch_num = 0
-    Xb, Yb, NAb, Nb = batcher.next()
-
-    while Xb is not None and (test_batches is None or
-                              batch_num < test_batches):
-      # update feed dict
-      fd[self.inputs_ph] = Xb
-      fd[self.targets_ph] = Yb
-
-      # make predictions
-      run_ops = [self.targets_eval, self.preds_eval,
-                 self.loss_eval, self.loss_eval_targets]
-      run_returns = sess.run(run_ops, feed_dict=fd)
-      targets_batch, preds_batch, loss_batch, target_losses_batch = run_returns
-
-      # accumulate predictions and targets
-      preds.append(preds_batch[:Nb,:,:].astype('float16'))
-      targets.append(targets_batch[:Nb,:,:].astype('float16'))
-      targets_na.append(np.zeros([Nb, self.preds_length], dtype='bool'))
-
-      # accumulate loss
-      batch_losses.append(loss_batch)
-      batch_target_losses.append(target_losses_batch)
-      batch_sizes.append(Nb)
-
-      # next batch
-      batch_num += 1
-      Xb, Yb, NAb, Nb = batcher.next()
-
-    # reset batcher
-    batcher.reset()
+        except tf.errors.OutOfRangeError:
+          data_available = False
 
     # construct arrays
     targets = np.concatenate(targets, axis=0)
@@ -1117,132 +1055,6 @@ class SeqNNModel(object):
     # instantiate accuracy object
     acc = accuracy.Accuracy(targets, preds, targets_na,
                             batch_losses, batch_target_losses)
-
-    return acc
-
-  def test_h5_manual(self,
-                     sess,
-                     batcher,
-                     rc=False,
-                     shifts=[0],
-                     mc_n=0,
-                     test_batches=None):
-    """ Compute model accuracy on a test set.
-
-        Args:
-          sess:         TensorFlow session
-          batcher:      Batcher object to provide data
-          rc:             Average predictions from the forward and reverse
-            complement sequences.
-          shifts:         Average predictions from sequence shifts left/right.
-          mc_n:           Monte Carlo iterations per rc/shift.
-          test_batches: Number of test batches
-
-        Returns:
-          acc:          Accuracy object
-        """
-
-    # determine ensemble iteration parameters
-    ensemble_fwdrc = []
-    ensemble_shifts = []
-    for shift in shifts:
-      ensemble_fwdrc.append(True)
-      ensemble_shifts.append(shift)
-      if rc:
-        ensemble_fwdrc.append(False)
-        ensemble_shifts.append(shift)
-
-    if mc_n > 0:
-      # setup feed dict
-      fd = self.set_mode('test_mc')
-
-    else:
-      # setup feed dict
-      fd = self.set_mode('test')
-
-      # co-opt the variable to represent
-      # iterations per fwdrc/shift.
-      mc_n = 1
-
-    # initialize prediction and target arrays
-    preds = []
-    targets = []
-    targets_na = []
-
-    batch_losses = []
-    batch_target_losses = []
-    batch_size = []
-
-    # get first batch
-    Xb, Yb, NAb, Nb = batcher.next()
-
-    batch_num = 0
-    while Xb is not None and (test_batches is None or
-                              batch_num < test_batches):
-      # make ensemble predictions
-      preds_batch, preds_batch_var, preds_all = self._predict_ensemble(
-          sess, fd, Xb, ensemble_fwdrc, ensemble_shifts, mc_n)
-
-      # add target info
-      fd[self.targets_ph] = Yb
-      fd[self.targets_na_ph] = NAb
-
-      targets_na.append(np.zeros([Nb, self.preds_length], dtype='bool'))
-
-      # recompute loss w/ ensembled prediction
-      fd[self.preds_adhoc] = preds_batch
-      targets_batch, loss_batch, target_losses_batch = sess.run(
-          [self.targets_train, self.loss_adhoc, self.target_losses_adhoc],
-          feed_dict=fd)
-
-      # accumulate predictions and targets
-      if preds_batch.ndim == 3:
-        preds.append(preds_batch[:Nb, :, :].astype('float16'))
-        targets.append(targets_batch[:Nb, :, :].astype('float16'))
-
-      else:
-        for qi in range(preds_batch.shape[3]):
-          # TEMP, ideally this will be in the HDF5 and set previously
-          self.quantile_means = np.geomspace(0.1, 256, 16)
-
-          # softmax
-          preds_batch_norm = np.expand_dims(
-              np.sum(np.exp(preds_batch[:Nb, :, :, :]), axis=3), axis=3)
-          pred_probs_batch = np.exp(
-              preds_batch[:Nb, :, :, :]) / preds_batch_norm
-
-          # expectation over quantile medians
-          preds.append(np.dot(pred_probs_batch, self.quantile_means))
-
-          # compare to quantile median
-          targets.append(self.quantile_means[targets_batch[:Nb, :, :] - 1])
-
-      # accumulate loss
-      batch_losses.append(loss_batch)
-      batch_target_losses.append(target_losses_batch)
-      batch_sizes.append(Nb)
-
-      # next batch
-      Xb, Yb, NAb, Nb = batcher.next()
-      batch_num += 1
-
-    targets = np.concatenate(targets, axis=0)
-    preds = np.concatenate(preds, axis=0)
-    targets_na = np.concatenate(targets_na, axis=0)
-
-    # reset batcher
-    batcher.reset()
-
-    # mean across batches
-    batch_losses = np.array(batch_losses, dtype='float64')
-    batch_losses = np.average(batch_losses, weights=batch_sizes)
-    batch_target_losses = np.array(batch_target_losses, dtype='float64')
-    batch_target_losses = np.average(batch_target_losses, axis=0, weights=batch_sizes)
-
-    # instantiate accuracy object
-    acc = accuracy.Accuracy(targets, preds, targets_na, batch_losses,
-                            batch_target_losses)
-
     return acc
 
   def running_mean(self, u_k1, x_k, k):

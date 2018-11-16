@@ -46,9 +46,7 @@ def main():
 
   # initialize multiprocessing pool
   pool = multiprocessing.Pool(options.processes)
-  print("Before")
   h5_open = h5py.File(h5_file, 'r')
-  print("After")
 
   h5_open = h5py.File(h5_file)
 

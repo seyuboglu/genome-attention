@@ -122,7 +122,9 @@ def tfrecord_dataset(tfr_data_files_pattern,
     static_batch_size = batch_size if use_static_batch_size else -1
 
     seq = tf.decode_raw(parsed_features[tfrecord_util.TFR_INPUT], tf.uint8)
+    #tf.Print(seq, [seq], "BEFORE")
     seq = tf.reshape(seq, [static_batch_size, seq_length, seq_depth])
+    #tf.Print(seq, [seq], "AFTER")
     seq = tf.cast(seq, tf.float32)
 
     label = tf.decode_raw(parsed_features[tfrecord_util.TFR_OUTPUT], tf.float16)
@@ -169,8 +171,11 @@ def make_data_ops(job,
       job['num_targets'],
       mode=mode,
       use_static_batch_size=use_static_batch_size)
-
-  return batcher.make_one_shot_iterator().get_next()
+  tf.print(None, "BEFOREE")
+  print("AKJBNSDKJHBNSDKJBNS")
+  n = batcher.make_one_shot_iterator().get_next()
+  tf.print(None, "AFTERRR")
+  return n
 
 
 def num_possible_augmentations(augment_with_complement, shift_augment_offsets):
@@ -272,6 +277,7 @@ class TFRecordBatcher(object):
 
     self.iterator = dataset.make_initializable_iterator()
     self._next_element = self.iterator.get_next()
+
 
   def initialize(self, sess):
     sess.run(self.iterator.initializer)

@@ -27,6 +27,7 @@ from basenji import layers
 from basenji import params
 from basenji import seqnn_util
 from basenji import tfrecord_batcher
+from basenji.util import RunningAverage
 
 class SeqNN(seqnn_util.SeqNNModel):
 
@@ -34,9 +35,7 @@ class SeqNN(seqnn_util.SeqNNModel):
     self.global_step = tf.train.get_or_create_global_step()
     self.hparams_set = False
 
-  def build_feed(self, job, augment_rc=False, augment_shifts=[0],
-                 ensemble_rc=False, ensemble_shifts=[0],
-                 embed_penultimate=False, target_subset=None):
+  def build_feed(self, job, embed_penultimate=False, target_subset=None):
     """Build training ops that depend on placeholders."""
 
     self.hp = params.make_hparams(job)
@@ -44,16 +43,10 @@ class SeqNN(seqnn_util.SeqNNModel):
     data_ops = self.make_placeholders()
 
     self.build_from_data_ops(job, data_ops,
-          augment_rc=augment_rc,
-          augment_shifts=augment_shifts,
-          ensemble_rc=ensemble_rc,
-          ensemble_shifts=ensemble_shifts,
           embed_penultimate=embed_penultimate,
           target_subset=target_subset)
 
   def build_from_data_ops(self, job, data_ops,
-                          augment_rc=False, augment_shifts=[0],
-                          ensemble_rc=False, ensemble_shifts=[0],
                           embed_penultimate=False, target_subset=None):
     """Build training ops from input data ops."""
     if not self.hparams_set:
@@ -68,7 +61,7 @@ class SeqNN(seqnn_util.SeqNNModel):
 
     # training data_ops w/ stochastic augmentation
     data_ops_train = augmentation.augment_stochastic(
-        data_ops, augment_rc, augment_shifts)
+        data_ops, job["augment_rc"], job["augment_shifts"])
 
     # compute train representation
     self.preds_train = self.build_predict(data_ops_train['sequence'],
@@ -90,7 +83,7 @@ class SeqNN(seqnn_util.SeqNNModel):
 
     # eval data ops w/ deterministic augmentation
     data_ops_eval = augmentation.augment_deterministic_set(
-        data_ops, ensemble_rc, ensemble_shifts)
+        data_ops, job["ensemble_rc"], job["ensemble_shifts"])
     data_seq_eval = tf.stack([do['sequence'] for do in data_ops_eval])
     data_rev_eval = tf.stack([do['reverse_preds'] for do in data_ops_eval])
 
@@ -112,9 +105,7 @@ class SeqNN(seqnn_util.SeqNNModel):
     # helper variables
     self.preds_length = self.preds_train.shape[1]
 
-  def build_sad(self, job, data_ops,
-                ensemble_rc=False, ensemble_shifts=[0],
-                embed_penultimate=False, target_subset=None):
+  def build_sad(self, job, data_ops, embed_penultimate=False, target_subset=None):
     """Build SAD predict ops."""
     if not self.hparams_set:
       self.hp = params.make_hparams(job)
@@ -125,7 +116,7 @@ class SeqNN(seqnn_util.SeqNNModel):
 
     # eval data ops w/ deterministic augmentation
     data_ops_eval = augmentation.augment_deterministic_set(
-        data_ops, ensemble_rc, ensemble_shifts)
+        data_ops, job["ensemble_rc"], job["ensemble_shifts"])
     data_seq_eval = tf.stack([do['sequence'] for do in data_ops_eval])
     data_rev_eval = tf.stack([do['reverse_preds'] for do in data_ops_eval])
 
@@ -227,7 +218,6 @@ class SeqNN(seqnn_util.SeqNNModel):
         'batch_buffer %d not divisible'
         ' by the CNN pooling %d') % (self.hp.batch_buffer, pool_preds)
     batch_buffer_pool = self.hp.batch_buffer // pool_preds
-    print("sequence length {} subtracted by the batch_buffer_pool {} is {}".format(seq_length, batch_buffer_pool, seq_length - batch_buffer_pool))
     # slice out buffer
     seq_length = seqs_repr.shape[1]
     seqs_repr = seqs_repr[:, batch_buffer_pool:
@@ -461,123 +451,6 @@ class SeqNN(seqnn_util.SeqNNModel):
 
     return fd
 
-  def train_epoch_h5_manual(self,
-                  sess,
-                  batcher,
-                  fwdrc=True,
-                  shift=0,
-                  sum_writer=None,
-                  epoch_batches=None,
-                  no_steps=False):
-    """Execute one training epoch, using HDF5 data
-       and manual augmentation."""
-    # initialize training loss
-    train_loss = []
-    batch_sizes = []
-    global_step = 0
-
-    # setup feed dict
-    fd = self.set_mode('train')
-
-    # get first batch
-    Xb, Yb, NAb, Nb = batcher.next(fwdrc, shift)
-
-    for batch_num in tqdm(range(batcher.num_seqs)):
-      t0 = time.time()
-      if Xb is None:
-        break
-      # update feed dict
-      fd[self.inputs_ph] = Xb
-      fd[self.targets_ph] = Yb
-
-      if no_steps:
-        run_returns = sess.run([self.merged_summary, self.loss_train] + \
-                                self.update_ops, feed_dict=fd)
-        summary, loss_batch = run_returns[:2]
-      else:
-        run_returns = sess.run(
-          [self.merged_summary, self.loss_train, self.global_step, self.step_op] + self.update_ops,
-          feed_dict=fd)
-        summary, loss_batch, global_step = run_returns[:3]
-
-      # add summary
-      if sum_writer is not None:
-        sum_writer.add_summary(summary, global_step)
-
-      # accumulate loss
-      train_loss.append(loss_batch)
-      batch_sizes.append(Xb.shape[0])
-      print('All Other Time %f' % (time.time() - t0))
-
-
-      # next batch
-      t0 = time.time()
-      Xb, Yb, NAb, Nb = batcher.next(fwdrc, shift)
-      print('Data Loading Time %f' % (time.time() - t0))
-
-    # reset training batcher if epoch considered all of the data
-    if epoch_batches is None:
-      batcher.reset()
-
-    avg_loss = np.average(train_loss, weights=batch_sizes)
-
-    return avg_loss, global_step
-
-  def train_epoch_h5(self,
-                     sess,
-                     batcher,
-                     sum_writer=None,
-                     epoch_batches=None,
-                     no_steps=False):
-    """Execute one training epoch using HDF5 data,
-       and compute-graph augmentation"""
-
-    # initialize training loss
-    train_loss = []
-    batch_sizes = []
-    global_step = 0
-
-    # setup feed dict
-    fd = self.set_mode('train')
-
-    # get first batch
-    Xb, Yb, NAb, Nb = batcher.next()
-
-    batch_num = 0
-    while Xb is not None and (epoch_batches is None or batch_num < epoch_batches):
-      # update feed dict
-      fd[self.inputs_ph] = Xb
-      fd[self.targets_ph] = Yb
-
-      if no_steps:
-        run_returns = sess.run([self.merged_summary, self.loss_train] + \
-                                self.update_ops, feed_dict=fd)
-        summary, loss_batch = run_returns[:2]
-      else:
-        run_ops = [self.merged_summary, self.loss_train, self.global_step, self.step_op]
-        run_ops += self.update_ops
-        summary, loss_batch, global_step = sess.run(run_ops, feed_dict=fd)[:3]
-
-      # add summary
-      if sum_writer is not None:
-        sum_writer.add_summary(summary, global_step)
-
-      # accumulate loss
-      train_loss.append(loss_batch)
-      batch_sizes.append(Nb)
-
-      # next batch
-      Xb, Yb, NAb, Nb = batcher.next()
-      batch_num += 1
-
-    # reset training batcher if epoch considered all of the data
-    if epoch_batches is None:
-      batcher.reset()
-
-    avg_loss = np.average(train_loss, weights=batch_sizes)
-
-    return avg_loss, global_step
-
 
   def train_epoch_tfr(self, sess, sum_writer=None, epoch_batches=None):
     """ Execute one training epoch, using TFRecords data. """
@@ -592,27 +465,31 @@ class SeqNN(seqnn_util.SeqNNModel):
 
     data_available = True
     batch_num = 0
-    while data_available and (epoch_batches is None or batch_num < epoch_batches):
-      try:
-        # update_ops won't run
-        run_ops = [self.merged_summary, self.loss_train, self.preds_train, self.global_step, self.step_op] + self.update_ops
-        run_returns = sess.run(run_ops, feed_dict=fd)
-        summary, loss_batch, preds, global_step = run_returns[:4]
+    loss_avg = RunningAverage()
+    
+    with tqdm(total=epoch_batches) as t:
+      while data_available and (epoch_batches is None or batch_num < epoch_batches):
+        try:
+          # update_ops won't run
+          run_ops = [self.merged_summary, self.loss_train, self.preds_train, self.global_step, self.step_op] + self.update_ops
+          run_returns = sess.run(run_ops, feed_dict=fd)
+          summary, loss_batch, preds, global_step = run_returns[:4]
 
-        # add summary
-        if sum_writer is not None:
-          sum_writer.add_summary(summary, global_step)
+          # add summary
+          if sum_writer is not None:
+            sum_writer.add_summary(summary, global_step)
 
-        # accumulate loss
-        train_loss.append(loss_batch)
-        batch_sizes.append(preds.shape[0])
+          # accumulate loss
+          train_loss.append(loss_batch)
+          batch_sizes.append(preds.shape[0])
 
-        # next batch
-        batch_num += 1
-
-      except tf.errors.OutOfRangeError:
-        data_available = False
-
-    avg_loss = np.average(train_loss, weights=batch_sizes)
+          # next batch
+          batch_num += 1
+          loss_avg.update(loss_batch)
+          t.set_postfix(loss='{:05.3f}'.format(loss_avg()))
+          t.update()
+        except tf.errors.OutOfRangeError:
+          data_available = False
+      avg_loss = np.average(train_loss, weights=batch_sizes)
 
     return avg_loss, global_step
