@@ -51,6 +51,7 @@ def run(params_file, data_file, train_epochs, train_epoch_batches, test_epoch_ba
 
   train_seqs = data_open['train_in']
   train_targets = data_open['train_out']
+  print(train_targets.shape)
   train_na = None
   if 'train_na' in data_open:
     train_na = data_open['train_na']
@@ -159,8 +160,8 @@ def run(params_file, data_file, train_epochs, train_epoch_batches, test_epoch_ba
 
       # train
 
-      train_loss, steps = model.train_epoch_h5(sess, batcher_train, fwdrc=fwdrc,
-                                               shift=augment_shifts[shift_i],
+      train_loss, steps = model.train_epoch_h5(sess, batcher_train, #fwdrc=fwdrc,
+                                               #shift=augment_shifts[shift_i],
                                                sum_writer=train_writer,
                                                epoch_batches=train_epoch_batches,
                                                no_steps=FLAGS.no_steps)

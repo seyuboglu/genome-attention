@@ -71,6 +71,9 @@ def run(params_file, data_file, train_epochs, train_epoch_batches, test_epoch_ba
   job['num_targets'] = train_targets.shape[2]
   job['target_pool'] = int(np.array(data_open.get('pool_width', 1)))
 
+  print(train_targets.shape)
+  exit()
+
   augment_shifts = [int(shift) for shift in FLAGS.augment_shifts.split(',')]
   ensemble_shifts = [int(shift) for shift in FLAGS.ensemble_shifts.split(',')]
 

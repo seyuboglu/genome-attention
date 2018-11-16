@@ -7,6 +7,8 @@ tf.flags.DEFINE_string('params', '', 'File containing parameter config')
 tf.flags.DEFINE_string('data', '', 'hd5 data file')
 tf.flags.DEFINE_string('train_data', '', 'train tfrecord file')
 tf.flags.DEFINE_string('test_data', '', 'test tfrecord file')
+tf.flags.DEFINE_boolean('multiple_tfr', False, 'Dataset is split into multiple tfrecord files')
+tf.flags.DEFINE_string('tfr_dir', '', 'tfrecord directory')
 
 
 # ensembling/augmentation

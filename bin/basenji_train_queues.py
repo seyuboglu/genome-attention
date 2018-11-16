@@ -20,6 +20,8 @@ from queue import Queue
 import sys
 from threading import Thread
 import time
+import glob
+from os import path
 
 import numpy as np
 import tensorflow as tf
@@ -31,20 +33,32 @@ from basenji import tfrecord_batcher
 
 FLAGS = tf.app.flags.FLAGS
 
+# /data/genome-attention/tfrecords
 
 def main(_):
   np.random.seed(FLAGS.seed)
 
-  run(params_file=FLAGS.params,
-      train_file=FLAGS.train_data,
-      test_file=FLAGS.test_data,
+  if FLAGS.multiple_tfr != None:
+    run(params_file=FLAGS.params,
       train_epochs=FLAGS.train_epochs,
       train_epoch_batches=FLAGS.train_epoch_batches,
-      test_epoch_batches=FLAGS.test_epoch_batches)
+      test_epoch_batches=FLAGS.test_epoch_batches,
+      tfr_dir=FLAGS.tfr_dir)
+
+  else:
+    run(params_file=FLAGS.params,
+      train_epochs=FLAGS.train_epochs,
+      train_epoch_batches=FLAGS.train_epoch_batches,
+      test_epoch_batches=FLAGS.test_epoch_batches,
+      train_file=FLAGS.train_data,
+      test_file=FLAGS.test_data)
 
 
-def run(params_file, train_file, test_file, train_epochs, train_epoch_batches,
-        test_epoch_batches):
+def run(params_file, train_epochs, train_epoch_batches,
+        test_epoch_batches,
+        train_file=None,
+        test_file=None,
+        tfr_dir=None):
 
   # parse shifts
   augment_shifts = [int(shift) for shift in FLAGS.augment_shifts.split(',')]
@@ -53,9 +67,22 @@ def run(params_file, train_file, test_file, train_epochs, train_epoch_batches,
   # read parameters
   job = params.read_job_params(params_file)
 
-  # load data
-  data_ops, training_init_op, test_init_op = make_data_ops(
-      job, train_file, test_file)
+  if tfr_dir:
+    # load data
+    data_ops, training_init_op, test_init_op = make_data_ops(
+      job,
+      tfr_dir=tfr_dir
+    )
+  elif train_file and test_file:
+    data_ops, training_init_op, test_init_op = make_data_ops(
+      job,
+      train_file=train_file,
+      test_file=test_file
+    )
+  else:
+    raise Exception(
+      'train and/or test paths missing. Aborting.'
+    )
 
   # initialize model
   model = seqnn.SeqNN()
@@ -97,6 +124,7 @@ def run(params_file, train_file, test_file, train_epochs, train_epoch_batches,
     while (train_epochs is not None and epoch < train_epochs) or \
           (train_epochs is None and early_stop_i < FLAGS.early_stop):
       t0 = time.time()
+      print('The time is currently {}'.format(t0))
 
       # save previous
       train_loss_last = train_loss
@@ -160,20 +188,54 @@ def accuracy_update(epoch, steps, train_loss, valid_acc, time_str, best_str):
   del valid_acc
 
 
-def make_data_ops(job, train_file, test_file):
-  def make_dataset(filename, mode):
-    return tfrecord_batcher.tfrecord_dataset(
-        filename,
-        job['batch_size'],
-        job['seq_length'],
-        job.get('seq_depth', 4),
-        job['target_length'],
-        job['num_targets'],
-        mode=mode,
-        repeat=False)
+def make_data_ops(job, train_file=None, test_file=None, tfr_dir=None):
+  def make_dataset(loc, mode, is_dir=False):
+    """
+    Creates the tfrecord dataset.
 
-  training_dataset = make_dataset(train_file, mode=tf.estimator.ModeKeys.TRAIN)
-  test_dataset = make_dataset(test_file, mode=tf.estimator.ModeKeys.EVAL)
+    This function is now expected to take either some filename string OR a
+    list of filename strings as the data source for tfrecord_dataset.
+    """
+    if is_dir:
+      pattern = ''
+      if mode == tf.estimator.ModeKeys.TRAIN:
+        pattern = 'train-*.tfr'
+      elif mode == tf.estimator.ModeKeys.EVAL:
+        pattern = 'valid-*.tfr'
+      elif mode == tf.estimator.ModeKeys.PREDICT:
+        pattern = 'test-*.tfr'
+      else:
+        raise Exception('unrecognized tfrecord mode. Aborting.')
+      pattern = path.join(loc, pattern)
+
+      return tfrecord_batcher.tfrecord_dataset(
+          pattern,
+          job['batch_size'],
+          job.get('seq_length', 131072),
+          job.get('seq_depth', 4),
+          job.get('target_length', 1024),
+          job['num_targets'],
+          mode=mode,
+          repeat=False
+      )
+    else:
+      return tfrecord_batcher.tfrecord_dataset(
+          loc,
+          job['batch_size'],
+          job['seq_length'],
+          job.get('seq_depth', 4),
+          job['target_length'],
+          job['num_targets'],
+          mode=mode,
+          repeat=False
+      )
+
+  if tfr_dir:
+    training_dataset = make_dataset(tfr_dir, mode=tf.estimator.ModeKeys.TRAIN, is_dir=True)
+    test_dataset = make_dataset(tfr_dir, mode=tf.estimator.ModeKeys.EVAL, is_dir=True)
+  else:
+    training_dataset = make_dataset(train_file, mode=tf.estimator.ModeKeys.TRAIN)
+    test_dataset = make_dataset(test_file, mode=tf.estimator.ModeKeys.EVAL)
 
   iterator = tf.data.Iterator.from_structure(
       training_dataset.output_types, training_dataset.output_shapes)

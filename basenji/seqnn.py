@@ -227,7 +227,7 @@ class SeqNN(seqnn_util.SeqNNModel):
         'batch_buffer %d not divisible'
         ' by the CNN pooling %d') % (self.hp.batch_buffer, pool_preds)
     batch_buffer_pool = self.hp.batch_buffer // pool_preds
-
+    print("sequence length {} subtracted by the batch_buffer_pool {} is {}".format(seq_length, batch_buffer_pool, seq_length - batch_buffer_pool))
     # slice out buffer
     seq_length = seqs_repr.shape[1]
     seqs_repr = seqs_repr[:, batch_buffer_pool:
