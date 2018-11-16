@@ -62,6 +62,8 @@ def read_job_params(job_file, require=[]):
             val = float(val)
           elif val.find('.') == -1:
             val = int(val)
+          elif val in {'True', 'False'}:
+            val = bool(val)
           else:
             val = float(val)
         except ValueError:
@@ -76,6 +78,12 @@ def read_job_params(job_file, require=[]):
           job[param].append(val)
         else:
           job[param] = val
+        
+    if type(job["ensemble_shifts"]) is not list:
+      job["ensemble_shifts"] = [job["ensemble_shifts"]]
+
+    if type(job["augment_shifts"]) is not list:
+        job["augment_shifts"] = [job["augment_shifts"]]
 
     print(job)
 

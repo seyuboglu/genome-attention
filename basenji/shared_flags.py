@@ -3,6 +3,7 @@
 import tensorflow as tf
 
 # parameters and data
+tf.flags.DEFINE_string('dir', '', 'experiment directory')
 tf.flags.DEFINE_string('params', '', 'File containing parameter config')
 tf.flags.DEFINE_string('data', '', 'hd5 data file')
 tf.flags.DEFINE_string('train_data', '', 'train tfrecord file')
@@ -30,9 +31,9 @@ tf.flags.DEFINE_integer('seed', 1, 'Random seed')
 # step counts
 tf.flags.DEFINE_integer('train_epochs', None,
                         'Number of training epochs.')
-tf.flags.DEFINE_integer('train_epoch_batches', None,
+tf.flags.DEFINE_integer('train_epoch_batches', 6524,
                         'Number of batches per training epoch.')
-tf.flags.DEFINE_integer('test_epoch_batches', None,
+tf.flags.DEFINE_integer('test_epoch_batches', 726,
                         'Number of batches per test epoch.')
 
 # training modes

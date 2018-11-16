@@ -30,6 +30,7 @@ from basenji import params
 from basenji import seqnn
 from basenji import shared_flags
 from basenji import tfrecord_batcher
+from basenji.util import set_logger
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -37,35 +38,20 @@ FLAGS = tf.app.flags.FLAGS
 
 def main(_):
   np.random.seed(FLAGS.seed)
-
-  if FLAGS.multiple_tfr != None:
-    run(params_file=FLAGS.params,
-      train_epochs=FLAGS.train_epochs,
-      train_epoch_batches=FLAGS.train_epoch_batches,
-      test_epoch_batches=FLAGS.test_epoch_batches,
-      tfr_dir=FLAGS.tfr_dir)
-
-  else:
-    run(params_file=FLAGS.params,
-      train_epochs=FLAGS.train_epochs,
-      train_epoch_batches=FLAGS.train_epoch_batches,
-      test_epoch_batches=FLAGS.test_epoch_batches,
-      train_file=FLAGS.train_data,
-      test_file=FLAGS.test_data)
+  run(dir=FLAGS.dir)
 
 
-def run(params_file, train_epochs, train_epoch_batches,
-        test_epoch_batches,
-        train_file=None,
-        test_file=None,
-        tfr_dir=None):
-
-  # parse shifts
-  augment_shifts = [int(shift) for shift in FLAGS.augment_shifts.split(',')]
-  ensemble_shifts = [int(shift) for shift in FLAGS.ensemble_shifts.split(',')]
+def run(dir):
+  set_logger(path.join(dir, "experiment.log"))
 
   # read parameters
-  job = params.read_job_params(params_file)
+  job = params.read_job_params(path.join(dir, "params.txt"))
+  tfr_dir = job["data_dir"]
+  test_file = None
+  train_file = None
+  test_epoch_batches = job["test_epoch_batches"]
+  train_epoch_batches = job["train_epoch_batches"]
+  train_epochs = job["train_epochs"]
 
   if tfr_dir:
     # load data
@@ -86,9 +72,7 @@ def run(params_file, train_epochs, train_epoch_batches,
 
   # initialize model
   model = seqnn.SeqNN()
-  model.build_from_data_ops(job, data_ops,
-                            FLAGS.augment_rc, augment_shifts,
-                            FLAGS.ensemble_rc, ensemble_shifts)
+  model.build_from_data_ops(job, data_ops)
 
   # launch accuracy compute thread
   acc_queue = Queue()
@@ -129,13 +113,17 @@ def run(params_file, train_epochs, train_epoch_batches,
       train_loss_last = train_loss
 
       # train epoch
+      print("Training – epoch: {}".format(epoch))
       sess.run(training_init_op)
       train_loss, steps = model.train_epoch_tfr(sess, train_writer, train_epoch_batches)
 
       # block for previous accuracy compute
+      print("Before")
       acc_queue.join()
+      print("after")
 
       # test validation
+      print("Validation – epoch: {}".format(epoch))
       sess.run(test_init_op)
       valid_acc = model.test_tfr(sess, test_epoch_batches)
 
@@ -159,7 +147,7 @@ def run(params_file, train_epochs, train_epoch_batches,
         time_str = '%3.1fh' % (epoch_time / 3600)
 
       # compute and write accuracy update
-      # accuracy_update(epoch, steps, train_loss, valid_acc, time_str, best_str)
+      #accuracy_update(epoch, steps, train_loss, valid_acc, time_str, best_str)
       acc_queue.put((epoch, steps, train_loss, valid_acc, time_str, best_str))
 
       # update epoch
@@ -180,8 +168,9 @@ def accuracy_update(epoch, steps, train_loss, valid_acc, time_str, best_str):
   valid_corr = valid_acc.pearsonr().mean()
 
   # print update
-  update_line = 'Epoch: %3d,  Steps: %7d,  Train loss: %7.5f,  Valid loss: %7.5f,' % (epoch+1, steps, train_loss, valid_acc.loss)
+  update_line = 'Train loss: %7.5f,  Valid loss: %7.5f,' % (train_loss, valid_acc.loss)
   update_line += '  Valid R2: %7.5f,  Valid R: %7.5f, Time: %s%s' % (valid_r2, valid_corr, time_str, best_str)
+  update_line += '\n========================================================================================='
   print(update_line, flush=True)
 
   del valid_acc
@@ -211,7 +200,7 @@ def make_data_ops(job, train_file=None, test_file=None, tfr_dir=None):
           pattern,
           job['batch_size'],
           job['seq_length'],
-          job.get('seq_depth', 4),
+          job['seq_depth'],
           job['target_length'],
           job['num_targets'],
           mode=mode,
