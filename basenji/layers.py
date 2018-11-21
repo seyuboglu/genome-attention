@@ -5,8 +5,95 @@ from __future__ import division
 from __future__ import print_function
 
 import tensorflow as tf
+import numpy as np
 
 from basenji import ops
+
+def exp_function(length, decay_constant=0.05):
+  """
+  """
+  X = np.zeros((length, length), dtype=np.float32)
+  for i in range(length):
+      X[i, :] = np.exp(-1*decay_constant*np.abs(i-(np.arange(length))))
+  X -= np.eye(length)
+  return tf.convert_to_tensor(X) 
+
+def exp_block(seqs_repr, is_training, 
+              decay_constants, name=''):
+  H = seqs_repr
+  length = H.get_shape().as_list()[1]
+  batch_size = tf.shape(H)[0]
+  seqs_repr_next = H
+  for decay_constant in decay_constants:
+    A = exp_function(length, decay_constant)
+    A = tf.expand_dims(A, axis=0)
+    C = tf.matmul(tf.tile(A, multiples=[batch_size, 1, 1]), H)
+    seqs_repr_next = tf.concat([seqs_repr_next, C], axis=2)
+
+  tf.logging.info('Exp layer with decay constants {}.'.format(decay_constants))
+
+  return seqs_repr_next
+
+
+def attention_block(seqs_repr, is_training,
+                    decay_constant, units, dropout, query_dropout, 
+                    l2_scale, name=''):
+  """
+
+  Args:
+    seqs_repr: [batchsize, length, num_channels] input sequence
+    is_training: whether is a training graph or not
+    batch_norm: whether to use batchnorm
+    bn_momentum: batch norm momentum
+    batch_renorm: whether to use batch renormalization in batchnorm
+    l2_scale: L2 weight regularization scale
+    name: optional name for the block
+  """
+  H = seqs_repr 
+  length = H.get_shape().as_list()[1]
+  num_channels = H.get_shape().as_list()[2]
+  Q = tf.layers.dense(H, num_channels, 
+                      activation=tf.nn.relu,
+                      use_bias=True,
+                      kernel_initializer= tf.variance_scaling_initializer(scale=2.0, mode='fan_in'), 
+                      bias_initializer=tf.zeros_initializer(),
+                      kernel_regularizer=None) 
+
+  if query_dropout > 0:
+    Q = tf.layers.dropout(inputs=Q,
+                          rate=query_dropout,
+                          training=is_training)
+
+    tf.logging.info('Query Dropout w/ probability %.3f' % query_dropout)
+
+  A = tf.matmul(Q, H, transpose_b=True)
+  
+  if decay_constant > 0:
+    print("Adding decay constant of {}".format(decay_constant))
+    exp_fn = exp_function(length, decay_constant)
+    A = tf.multiply(A, exp_fn)
+
+  A = tf.nn.softmax(A, axis=2)
+  C = tf.matmul(A, H)
+  seqs_repr_next = tf.concat([H, C], axis=2)
+
+  if units > 0:
+    seqs_repr_next = tf.layers.dense(seqs_repr_next, units, 
+                                     activation=tf.nn.relu,
+                                     use_bias=True,
+                                     kernel_initializer= tf.variance_scaling_initializer(scale=2.0, mode='fan_in'), 
+                                     bias_initializer=tf.zeros_initializer(),
+                                     kernel_regularizer=None)
+  
+  if dropout > 0:
+    seqs_repr_next = tf.layers.dropout(
+                  inputs=seqs_repr_next,
+                  rate=dropout,
+                  training=is_training)
+    tf.logging.info('Dropout w/ probability %.3f' % dropout)
+
+  tf.logging.info('Attention Layer with {} hidden units.'.format(units))
+  return seqs_repr_next
 
 
 def conv_block(seqs_repr, conv_params, is_training,

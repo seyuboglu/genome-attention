@@ -178,6 +178,18 @@ def make_hparams(job, num_worker_replicas=None, num_ps_replicas=None):
   # transform CNN hparams to specific params
   add_cnn_params(hp)
 
+  hp.add_hparam('attention', int(job.get("attention", 0)) != 0)
+  hp.add_hparam('attention_units', job.get("attention_units", 256))
+  hp.add_hparam('attention_decay_constant', job.get("attention_decay_constant", 0))
+  hp.add_hparam("attention_dropout", job.get("attention_dropout", 0))
+  hp.add_hparam("attention_query_dropout", job.get("attention_query_dropout", 0))
+  hp.add_hparam('attention_l2_scale', job.get("attention_l2_scale", 0))
+
+  hp.add_hparam('exp', int(job.get("exp", 0)) != 0)
+  hp.add_hparam('exp_decay_constant', list(job.get("exp_decay_constant", 0)))
+
+
+
   ###################################################
   # google3
 

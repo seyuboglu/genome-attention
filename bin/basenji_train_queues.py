@@ -15,13 +15,14 @@
 # =========================================================================
 from __future__ import print_function
 
-
+import logging
 from queue import Queue
 import sys
 from threading import Thread
 import time
 import glob
 from os import path
+import os
 
 import numpy as np
 import tensorflow as tf
@@ -83,8 +84,8 @@ def run(dir):
   saver = tf.train.Saver()
 
   with tf.Session() as sess:
-    train_writer = tf.summary.FileWriter(FLAGS.logdir + '/train',
-                                         sess.graph) if FLAGS.logdir else None
+    train_writer = tf.summary.FileWriter(dir + '/train',
+                                         sess.graph) if dir else None
 
     coord = tf.train.Coordinator()
     tf.train.start_queue_runners(coord=coord)
@@ -118,9 +119,7 @@ def run(dir):
       train_loss, steps = model.train_epoch_tfr(sess, train_writer, train_epoch_batches)
 
       # block for previous accuracy compute
-      print("Before")
       acc_queue.join()
-      print("after")
 
       # test validation
       print("Validation – epoch: {}".format(epoch))
@@ -133,7 +132,10 @@ def run(dir):
         best_loss = valid_acc.loss
         best_str = ', best!'
         early_stop_i = 0
-        saver.save(sess, '%s/model_best.tf' % FLAGS.logdir)
+        model_dir = path.join(dir, "model")
+        if not os.path.exists(model_dir):
+          os.makedirs(model_dir)
+        saver.save(sess, path.join(model_dir, "model_best.tf"))
       else:
         early_stop_i += 1
 
@@ -148,7 +150,7 @@ def run(dir):
 
       # compute and write accuracy update
       #accuracy_update(epoch, steps, train_loss, valid_acc, time_str, best_str)
-      acc_queue.put((epoch, steps, train_loss, valid_acc, time_str, best_str))
+      acc_queue.put((epoch, steps, train_loss, valid_acc, time_str, best_str, train_writer))
 
       # update epoch
       epoch += 1
@@ -246,16 +248,27 @@ class AccuracyWorker(Thread):
     while True:
       try:
         # get args
-        epoch, steps, train_loss, valid_acc, time_str, best_str = self.queue.get()
+        epoch, steps, train_loss, valid_acc, time_str, best_str, writer = self.queue.get()
 
         # compute validation accuracy
         valid_r2 = valid_acc.r2().mean()
         valid_corr = valid_acc.pearsonr().mean()
 
+        # add summary
+        r2_summary = tf.Summary(value=[tf.Summary.Value(tag="valid_r2",
+                                                        simple_value=valid_r2)])
+        writer.add_summary(r2_summary, steps)                                        
+        r_summary = tf.Summary(value=[tf.Summary.Value(tag="valid_r",
+                                                       simple_value=valid_corr)])
+        writer.add_summary(r_summary, steps)                                  
+        loss_summary = tf.Summary(value=[tf.Summary.Value(tag="valid_loss",
+                                                          simple_value=valid_acc.loss)])   
+        writer.add_summary(loss_summary, steps)
+
         # print update
         update_line = 'Epoch: %3d,  Steps: %7d,  Train loss: %7.5f,  Valid loss: %7.5f,' % (epoch+1, steps, train_loss, valid_acc.loss)
         update_line += '  Valid R2: %7.5f,  Valid R: %7.5f, Time: %s%s' % (valid_r2, valid_corr, time_str, best_str)
-        print(update_line, flush=True)
+        logging.info(update_line)
 
         # delete predictions and targets
         del valid_acc
