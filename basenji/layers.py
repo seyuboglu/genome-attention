@@ -36,7 +36,8 @@ def exp_block(seqs_repr, is_training,
 
 
 def attention_block(seqs_repr, is_training,
-                    decay_constant, units, dropout, query_dropout, 
+                    decay_variable, decay_constant, 
+                    units, dropout, query_dropout, 
                     l2_scale, name=''):
   """
 
@@ -53,7 +54,7 @@ def attention_block(seqs_repr, is_training,
   length = H.get_shape().as_list()[1]
   num_channels = H.get_shape().as_list()[2]
   Q = tf.layers.dense(H, num_channels, 
-                      activation=tf.nn.relu,
+                      activation=tf.nn.tanh,
                       use_bias=True,
                       kernel_initializer= tf.variance_scaling_initializer(scale=2.0, mode='fan_in'), 
                       bias_initializer=tf.zeros_initializer(),
@@ -68,16 +69,25 @@ def attention_block(seqs_repr, is_training,
 
   A = tf.matmul(Q, H, transpose_b=True)
   
-  if decay_constant > 0:
-    print("Adding decay constant of {}".format(decay_constant))
+  if decay_variable:
+    tf.logging.info("Adding decay variable.")
+    exp_fn = exp_function(length, 1)
+    decay_factor = tf.Variable(1, dtype=tf.float32)
+    #decay_factor = tf.Print(decay_factor, [decay_factor])
+    exp_fn = tf.pow(exp_fn, decay_factor)
+  elif decay_constant > 0:
+    tf.logging.info("Adding decay constant of {}".format(decay_constant))
     exp_fn = exp_function(length, decay_constant)
-    A = tf.multiply(A, exp_fn)
+  
+  A = tf.multiply(A, exp_fn)
 
   A = tf.nn.softmax(A, axis=2)
+  A = tf.Print(A, [tf.reduce_max(A, axis=2)])
   C = tf.matmul(A, H)
   seqs_repr_next = tf.concat([H, C], axis=2)
 
   if units > 0:
+    tf.logging("Output units{}".format(units))
     seqs_repr_next = tf.layers.dense(seqs_repr_next, units, 
                                      activation=tf.nn.relu,
                                      use_bias=True,

@@ -196,30 +196,34 @@ class SeqNN(seqnn_util.SeqNNModel):
       with tf.variable_scope('cnn%d' % layer_index, reuse=tf.AUTO_REUSE):
         # convolution block
         args_for_block = self._make_conv_block_args(layer_index, layer_reprs)
-        
+
+
         seqs_repr = layers.conv_block(seqs_repr=seqs_repr, **args_for_block)
 
         # save representation
         layer_reprs.append(seqs_repr)
+    
+    if self.hp.attention > 0:
+      for i in range(self.hp.attention):
+        seqs_repr = layers.attention_block(seqs_repr, 
+                                           self.is_training, 
+                                           self.hp.attention_decay_variable,
+                                           self.hp.attention_decay_constant, 
+                                           self.hp.attention_units, 
+                                           self.hp.attention_dropout,
+                                           self.hp.attention_query_dropout,
+                                           self.hp.attention_l2_scale)
+        layer_reprs.append(seqs_repr)
+
+    if self.hp.exp:
+      seqs_repr = layers.exp_block(seqs_repr, 
+                                  self.is_training, 
+                                  self.hp.exp_decay_constant)
+      layer_reprs.append(seqs_repr)
 
     if save_reprs:
       self.layer_reprs = layer_reprs
     
-    # attention
-    if self.hp.attention:
-      seqs_repr = layers.attention_block(seqs_repr, 
-                                         self.is_training, 
-                                         self.hp.attention_decay_constant, 
-                                         self.hp.attention_units, 
-                                         self.hp.attention_dropout,
-                                         self.hp.attention_query_dropout,
-                                         self.hp.attention_l2_scale)
-      layer_reprs.append(seqs_repr)
-
-    if self.hp.exp:
-      seqs_repr = layers.exp_block(seqs_repr, 
-                                   self.is_training, 
-                                   self.hp.exp_decay_constant)
     # final nonlinearity
     seqs_repr = tf.nn.relu(seqs_repr)
 
