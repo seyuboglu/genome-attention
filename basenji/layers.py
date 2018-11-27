@@ -72,17 +72,17 @@ def attention_block(seqs_repr, is_training,
   if decay_variable:
     tf.logging.info("Adding decay variable.")
     exp_fn = exp_function(length, 1)
-    decay_factor = tf.Variable(1, dtype=tf.float32)
-    #decay_factor = tf.Print(decay_factor, [decay_factor])
+    decay_factor = tf.get_variable("decay_factor", [1], 
+                                   dtype=tf.float32, 
+                                   initializer=tf.ones_initializer)
     exp_fn = tf.pow(exp_fn, decay_factor)
   elif decay_constant > 0:
     tf.logging.info("Adding decay constant of {}".format(decay_constant))
     exp_fn = exp_function(length, decay_constant)
   
   A = tf.multiply(A, exp_fn)
-
+  
   A = tf.nn.softmax(A, axis=2)
-  A = tf.Print(A, [tf.reduce_max(A, axis=2)])
   C = tf.matmul(A, H)
   seqs_repr_next = tf.concat([H, C], axis=2)
 
