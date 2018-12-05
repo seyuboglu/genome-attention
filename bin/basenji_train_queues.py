@@ -70,6 +70,11 @@ def run(dir):
     raise Exception(
       'train and/or test paths missing. Aborting.'
     )
+  
+  save_dir = dir if "save_dir" not in job else job["save_dir"]
+  model_dir = path.join(save_dir, "model")
+  if not os.path.exists(model_dir):
+    os.makedirs(model_dir)
 
   # initialize model
   model = seqnn.SeqNN()
@@ -90,16 +95,25 @@ def run(dir):
     coord = tf.train.Coordinator()
     tf.train.start_queue_runners(coord=coord)
 
-    if FLAGS.restart:
+    t0 = time.time()
+    print('Initializing...')
+    sess.run(tf.local_variables_initializer())
+    sess.run(tf.global_variables_initializer())
+    print('Initialization time %f' % (time.time() - t0))
+
+    if 'restart'  in job:
+      # only include
+      restore_variables = [var for var in tf.global_variables() if "attention" not in var.name and "cnn_final" not in var.name and "decay_factor" not in var.name]
+      restore_saver = tf.train.Saver(var_list = restore_variables)
       # load variables into session
-      saver.restore(sess, FLAGS.restart)
-    else:
-      # initialize variables
-      t0 = time.time()
-      print('Initializing...')
-      sess.run(tf.local_variables_initializer())
-      sess.run(tf.global_variables_initializer())
-      print('Initialization time %f' % (time.time() - t0))
+      restore_saver.restore(sess, job['restart'])
+    #else:
+    #  # initialize variables
+    #  t0 = time.time()
+    #  print('Initializing...')
+    #  sess.run(tf.local_variables_initializer())
+    #  sess.run(tf.global_variables_initializer())
+    #  print('Initialization time %f' % (time.time() - t0))
 
     train_loss = None
     best_loss = None
@@ -132,9 +146,6 @@ def run(dir):
         best_loss = valid_acc.loss
         best_str = ', best!'
         early_stop_i = 0
-        model_dir = path.join(dir, "model")
-        if not os.path.exists(model_dir):
-          os.makedirs(model_dir)
         saver.save(sess, path.join(model_dir, "model_best.tf"))
       else:
         early_stop_i += 1

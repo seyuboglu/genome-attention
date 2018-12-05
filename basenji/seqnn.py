@@ -192,37 +192,59 @@ class SeqNN(seqnn_util.SeqNNModel):
     layer_reprs = [inputs]
 
     seqs_repr = inputs
-    for layer_index in range(self.hp.cnn_layers):
+    for layer_index in range(self.hp.cnn_layers-1):
       with tf.variable_scope('cnn%d' % layer_index, reuse=tf.AUTO_REUSE):
         # convolution block
         #seqs_repr = tf.Print(seqs_repr, [tf.shape(seqs_repr)], "{}".format(layer_index))
         args_for_block = self._make_conv_block_args(layer_index, layer_reprs)
-
-
         seqs_repr = layers.conv_block(seqs_repr=seqs_repr, **args_for_block)
 
         # save representation
         layer_reprs.append(seqs_repr)
+      
+    if self.hp.multi_head_attention > 0:
+      seqs_repr = layers.multi_head_attention_block(seqs_repr,
+                                                    is_training=self.is_training, 
+                                                    num_heads=self.hp.attention_num_heads,
+                                                    num_units=self.hp.attention_num_units,
+                                                    decay_variable=self.hp.attention_decay_variable,
+                                                    decay_constant=self.hp.attention_decay_constant,
+                                                    dropout=self.hp.attention_dropout,
+                                                    query_dropout=self.hp.attention_query_dropout,
+                                                    l2_scale=self.hp.attention_l2_scale)
 
-    if self.hp.attention > 0:
-      for i in range(self.hp.attention):
-        with tf.variable_scope('attention{}'.format(i), reuse=tf.AUTO_REUSE):
-          #seqs_repr = tf.Print(seqs_repr, [tf.shape(seqs_repr)], "{}".format(i))
-          seqs_repr = layers.attention_block(seqs_repr, 
-                                            self.is_training, 
-                                            self.hp.attention_decay_variable,
-                                            self.hp.attention_decay_constant, 
-                                            self.hp.attention_units, 
-                                            self.hp.attention_dropout,
-                                            self.hp.attention_query_dropout,
-                                            self.hp.attention_l2_scale)
-          layer_reprs.append(seqs_repr)
+    elif self.hp.dense_attention > 0:
+      seqs_repr = layers.dense_attention_block(seqs_repr,
+                                         self.hp.dense_attention,
+                                         self.is_training, 
+                                         self.hp.attention_decay_variable,
+                                         self.hp.attention_decay_constant,
+                                         self.hp.attention_dropout,
+                                         self.hp.attention_query_dropout,
+                                         self.hp.attention_l2_scale)
 
-      if self.hp.exp:
+    elif self.hp.exp:
+      if self.hp.exp_decay_variable > 0:
+        seqs_repr = layers.exp_block_variable(seqs_repr, 
+                                             self.is_training, 
+                                             self.hp.exp_decay_variable)
+      else:
         seqs_repr = layers.exp_block(seqs_repr, 
-                                    self.is_training, 
-                                    self.hp.exp_decay_constant)
-        layer_reprs.append(seqs_repr)
+                                     self.is_training, 
+                                     self.hp.exp_decay_constant)
+      layer_reprs.append(seqs_repr)
+
+    # Final Conv
+    with tf.variable_scope('cnn_final%d' % (self.hp.cnn_layers-1), reuse=tf.AUTO_REUSE):
+
+      # convolution block
+      #seqs_repr = tf.Print(seqs_repr, [tf.shape(seqs_repr)], "{}".format(layer_index))
+      args_for_block = self._make_conv_block_args(self.hp.cnn_layers-1, layer_reprs)
+      seqs_repr = layers.conv_block(seqs_repr=seqs_repr, **args_for_block)
+
+      # save representation
+      layer_reprs.append(seqs_repr)
+
 
       if save_reprs:
         self.layer_reprs = layer_reprs
