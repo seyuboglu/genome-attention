@@ -179,7 +179,10 @@ def make_hparams(job, num_worker_replicas=None, num_ps_replicas=None):
   add_cnn_params(hp)
 
   hp.add_hparam('attention', int(job.get("attention", 0)))
-  hp.add_hparam('attention_units', job.get("attention_units", 256))
+  hp.add_hparam('multi_head_attention', int(job.get("multi_head_attention", 0)))
+  hp.add_hparam('dense_attention', int(job.get("dense_attention", 0)))
+  hp.add_hparam('attention_num_heads', job.get("attention_num_heads", 0))
+  hp.add_hparam('attention_num_units', job.get("attention_num_units", 0))
   hp.add_hparam('attention_decay_variable', int(job.get("attention_decay_variable", 0)) != 0)
   hp.add_hparam('attention_decay_constant', job.get("attention_decay_constant", 0))
   hp.add_hparam("attention_dropout", job.get("attention_dropout", 0))
@@ -188,6 +191,7 @@ def make_hparams(job, num_worker_replicas=None, num_ps_replicas=None):
 
   hp.add_hparam('exp', int(job.get("exp", 0)) != 0)
   hp.add_hparam('exp_decay_constant', list(job.get("exp_decay_constant", [0])))
+  hp.add_hparam('exp_decay_variable', job.get("exp_decay_variable", 0))
 
 
 

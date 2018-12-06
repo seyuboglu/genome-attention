@@ -18,7 +18,7 @@ def exp_function(length, decay_constant=0.05):
   X -= np.eye(length)
   return tf.convert_to_tensor(X) 
 
-def exp_block(seqs_repr, is_training, 
+def exp_block(seqs_repr, is_training,
               decay_constants, name=''):
   H = seqs_repr
   length = H.get_shape().as_list()[1]
@@ -34,11 +34,96 @@ def exp_block(seqs_repr, is_training,
 
   return seqs_repr_next
 
+def exp_block_variable(seqs_repr, is_training,
+              decay_variable, name=''):
+  H = seqs_repr
+  length = H.get_shape().as_list()[1]
+  batch_size = tf.shape(H)[0]
+  contexts = [H]
+  for i in range(decay_variable):
+    with tf.variable_scope('learned_exponential{}'.format(i), reuse=tf.AUTO_REUSE):
+      exp_fn = exp_function(length, 1)
+      decay_factor = tf.get_variable(f"decay_factor", [1], 
+                                     dtype=tf.float32, 
+                                     initializer=tf.random_uniform_initializer(0, 1),
+                                     constraint=lambda x: tf.clip_by_value(x, 0, np.infty))
+      decay_factor = tf.Print(decay_factor, [decay_factor])
+      A = tf.pow(exp_fn, decay_factor)
+      A = tf.nn.softmax(A, axis=2)
+      A = tf.expand_dims(A, axis=0)
+      C = tf.matmul(tf.tile(A, multiples=[batch_size, 1, 1]), H)
+      contexts.append(C)
+  seqs_repr_next = tf.concat(contexts, axis=2)
+
+  tf.logging.info(f'Exp layer with {decay_variable} decay variables.')
+
+  return seqs_repr_next
+
+
+def multi_head_attention_block(seqs_repr, is_training, num_heads, num_units,
+                               decay_variable, decay_constant, 
+                               dropout, query_dropout, 
+                               l2_scale, name=''):
+  contexts = [seqs_repr]
+  for i in range(num_heads):
+    with tf.variable_scope('multi_attention{}'.format(i), reuse=tf.AUTO_REUSE):
+      context = attention_block(seqs_repr=seqs_repr, 
+                                       is_training=is_training, 
+                                       decay_variable=decay_variable,
+                                       decay_constant=decay_constant,
+                                       dropout=dropout,
+                                       query_dropout=query_dropout,
+                                       l2_scale=l2_scale,
+                                       dense=False)
+      contexts.append(context)
+      tf.logging.info("Adding attention head.")
+  seqs_repr = tf.concat(contexts, axis=2)
+  tf.logging.info("Concatentating contexts.")
+
+  #with tf.variable_scope('multi_attention_final', reuse=tf.AUTO_REUSE):
+    #seqs_repr = tf.layers.dense(inputs=seqs_repr,
+    #                              units=num_units,
+    #                              activation=tf.nn.relu,
+    #                              kernel_initializer=tf.variance_scaling_initializer(scale=2.0, mode='fan_in'),
+    #                              kernel_regularizer=tf.contrib.layers.l2_regularizer(l2_scale))
+    #seqs_repr = tf.layers.conv1d(
+    #              seqs_repr,
+    #              filters=2048,
+    #              kernel_size=[1],
+    #              strides=1,
+    #              padding='same',
+    #              use_bias=True,
+    #              activation=tf.nn.relu,
+    #              kernel_initializer=tf.variance_scaling_initializer(scale=2.0, mode='fan_in'),
+    #              kernel_regularizer=tf.contrib.layers.l2_regularizer(l2_scale))
+    #tf.logging.info("Adding multi-head final dense.")
+
+  return seqs_repr
+
+def dense_attention_block(seqs_repr, is_training, num_layers,
+                          decay_variable, decay_constant, 
+                          units, dropout, query_dropout, 
+                          l2_scale, name=''):
+  """
+  """
+  for i in range(num_layers):
+    with tf.variable_scope('dense_attention{}'.format(i), reuse=tf.AUTO_REUSE):
+      #seqs_repr = tf.Print(seqs_repr, [tf.shape(seqs_repr)], "{}".format(i))
+      seqs_repr = attention_block(seqs_repr, 
+                                         is_training, 
+                                         decay_variable,
+                                         decay_constant,
+                                         dropout,
+                                         query_dropout,
+                                         l2_scale)
+      layer_reprs.append(seqs_repr)
+  return seqs_repr
+
 
 def attention_block(seqs_repr, is_training,
                     decay_variable, decay_constant, 
-                    units, dropout, query_dropout, 
-                    l2_scale, name=''):
+                    dropout, query_dropout, 
+                    l2_scale, name='', dense=True):
   """
 
   Args:
@@ -74,26 +159,23 @@ def attention_block(seqs_repr, is_training,
     exp_fn = exp_function(length, 1)
     decay_factor = tf.get_variable("decay_factor", [1], 
                                    dtype=tf.float32, 
-                                   initializer=tf.ones_initializer)
+                                   initializer=tf.random_uniform_initializer(0, 1),
+                                   constraint=lambda x: tf.clip_by_value(x, 0, np.infty))
     exp_fn = tf.pow(exp_fn, decay_factor)
+    A = tf.multiply(A, exp_fn)
+
   elif decay_constant > 0:
     tf.logging.info("Adding decay constant of {}".format(decay_constant))
     exp_fn = exp_function(length, decay_constant)
-  
-  A = tf.multiply(A, exp_fn)
+    A = tf.multiply(A, exp_fn)
   
   A = tf.nn.softmax(A, axis=2)
   C = tf.matmul(A, H)
-  seqs_repr_next = tf.concat([H, C], axis=2)
 
-  if units > 0:
-    tf.logging("Output units{}".format(units))
-    seqs_repr_next = tf.layers.dense(seqs_repr_next, units, 
-                                     activation=tf.nn.relu,
-                                     use_bias=True,
-                                     kernel_initializer= tf.variance_scaling_initializer(scale=2.0, mode='fan_in'), 
-                                     bias_initializer=tf.zeros_initializer(),
-                                     kernel_regularizer=None)
+  if dense:
+    seqs_repr_next = tf.concat([H, C], axis=2)
+  else:
+    seqs_repr_next = C
   
   if dropout > 0:
     seqs_repr_next = tf.layers.dropout(
@@ -102,7 +184,7 @@ def attention_block(seqs_repr, is_training,
                   training=is_training)
     tf.logging.info('Dropout w/ probability %.3f' % dropout)
 
-  tf.logging.info('Attention Layer with {} hidden units.'.format(units))
+  tf.logging.info('Attention Layer.')
   return seqs_repr_next
 
 
