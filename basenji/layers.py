@@ -45,7 +45,8 @@ def exp_block_variable(seqs_repr, is_training,
       exp_fn = exp_function(length, 1)
       decay_factor = tf.get_variable(f"decay_factor", [1], 
                                      dtype=tf.float32, 
-                                    initializer=tf.random_uniform_initializer(0, 1))
+                                     initializer=tf.random_uniform_initializer(0, 1),
+                                     constraint=lambda x: tf.clip_by_value(x, 0, np.infty))
       decay_factor = tf.Print(decay_factor, [decay_factor])
       A = tf.pow(exp_fn, decay_factor)
       A = tf.nn.softmax(A, axis=2)
@@ -158,7 +159,8 @@ def attention_block(seqs_repr, is_training,
     exp_fn = exp_function(length, 1)
     decay_factor = tf.get_variable("decay_factor", [1], 
                                    dtype=tf.float32, 
-                                   initializer=tf.random_uniform_initializer(0, 1))
+                                   initializer=tf.random_uniform_initializer(0, 1),
+                                   constraint=lambda x: tf.clip_by_value(x, 0, np.infty))
     exp_fn = tf.pow(exp_fn, decay_factor)
     A = tf.multiply(A, exp_fn)
 
