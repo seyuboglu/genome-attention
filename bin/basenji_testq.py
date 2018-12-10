@@ -106,10 +106,14 @@ def main():
 
   # parse shifts to integers
   options.shifts = [int(shift) for shift in options.shifts.split(',')]
+  options.valid = False
+
+  data_open = h5py.File('/data/genome-attention/l131k_w128.h5')
+  test_targets = data_open['test_out']
 
   # read targets
   targets_file = '%s/targets.txt' % data_dir
-  targets_df = pd.read_table(targets_file)
+  # targets_df = pd.read_table(targets_file)
 
   # read model parameters
   job = params.read_job_params(params_file)
@@ -121,8 +125,9 @@ def main():
   # initialize model
   model = seqnn.SeqNN()
   model.build_from_data_ops(job, data_ops,
-                            ensemble_rc=options.rc,
-                            ensemble_shifts=options.shifts)
+                            # ensemble_rc=options.rc,
+                            # ensemble_shifts=options.shifts
+                            )
 
   # initialize saver
   saver = tf.train.Saver()
@@ -167,9 +172,9 @@ def main():
     acc_out = open('%s/acc.txt' % options.out_dir, 'w')
     for ti in range(len(test_r2)):
       print(
-        '%4d  %7.5f  %.5f  %.5f  %.5f  %s' %
+        '%4d  %7.5f  %.5f  %.5f  %.5f' %
         (ti, test_acc.target_losses[ti], test_r2[ti], test_pcor[ti],
-          test_log_pcor[ti], targets_df.description.iloc[ti]), file=acc_out)
+          test_log_pcor[ti]), file=acc_out)#, targets_df.description.iloc[ti]), file=acc_out)
     acc_out.close()
 
     # print normalization factors
@@ -248,8 +253,8 @@ def main():
       track_indexes = [int(ti) for ti in options.track_indexes.split(',')]
 
     bed_set = 'test'
-    if options.valid:
-      bed_set = 'valid'
+    # if options.valid:
+    #   bed_set = 'valid'
 
     for ti in track_indexes:
       test_targets_ti = test_targets[:, :, ti]

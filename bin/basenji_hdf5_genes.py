@@ -354,6 +354,7 @@ def bigwig_tss_targets(wig_file, tss_list, seq_coords, pool_width=1):
 ################################################################################
 def check_wigs(target_wigs_file):
   target_wigs_df = pd.read_table(target_wigs_file)
+  print(target_wigs_df)
   for wig_file in target_wigs_df.file:
     if not os.path.isfile(wig_file):
       print('Cannot find %s' % wig_file, file=sys.stderr)
