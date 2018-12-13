@@ -60,7 +60,7 @@ def exp_block_variable(seqs_repr, is_training,
   return seqs_repr_next
 
 
-def multi_head_attention_block(seqs_repr, is_training, num_heads, num_units,
+def multi_head_attention_block(seqs_repr, is_training, num_heads, num_units, n_query_layers,
                                decay_variable, decay_constant, 
                                dropout, query_dropout, 
                                l2_scale, name=''):
@@ -69,6 +69,7 @@ def multi_head_attention_block(seqs_repr, is_training, num_heads, num_units,
     with tf.variable_scope('multi_attention{}'.format(i), reuse=tf.AUTO_REUSE):
       context = attention_block(seqs_repr=seqs_repr, 
                                        is_training=is_training, 
+                                       n_query_layers=n_query_layers,
                                        decay_variable=decay_variable,
                                        decay_constant=decay_constant,
                                        dropout=dropout,
@@ -120,7 +121,7 @@ def dense_attention_block(seqs_repr, is_training, num_layers,
   return seqs_repr
 
 
-def attention_block(seqs_repr, is_training,
+def attention_block(seqs_repr, is_training, n_query_layers,
                     decay_variable, decay_constant, 
                     dropout, query_dropout, 
                     l2_scale, name='', dense=True):
@@ -138,12 +139,14 @@ def attention_block(seqs_repr, is_training,
   H = seqs_repr 
   length = H.get_shape().as_list()[1]
   num_channels = H.get_shape().as_list()[2]
-  Q = tf.layers.dense(H, num_channels, 
-                      activation=tf.nn.tanh,
-                      use_bias=True,
-                      kernel_initializer= tf.variance_scaling_initializer(scale=2.0, mode='fan_in'), 
-                      bias_initializer=tf.zeros_initializer(),
-                      kernel_regularizer=None) 
+  Q = H 
+  for i in range(n_query_layers):
+    Q = tf.layers.dense(Q, num_channels, 
+                        activation=tf.nn.tanh,
+                        use_bias=True,
+                        kernel_initializer= tf.variance_scaling_initializer(scale=2.0, mode='fan_in'), 
+                        bias_initializer=tf.zeros_initializer(),
+                        kernel_regularizer=None) 
 
   if query_dropout > 0:
     Q = tf.layers.dropout(inputs=Q,

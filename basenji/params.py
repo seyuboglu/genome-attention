@@ -180,6 +180,7 @@ def make_hparams(job, num_worker_replicas=None, num_ps_replicas=None):
 
   hp.add_hparam('attention', int(job.get("attention", 0)))
   hp.add_hparam('multi_head_attention', int(job.get("multi_head_attention", 0)))
+  hp.add_hparam('attention_n_query_layers', int(job.get("attention_n_query_layers", 1)))
   hp.add_hparam('dense_attention', int(job.get("dense_attention", 0)))
   hp.add_hparam('attention_num_heads', job.get("attention_num_heads", 0))
   hp.add_hparam('attention_num_units', job.get("attention_num_units", 0))

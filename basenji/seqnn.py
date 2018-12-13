@@ -201,17 +201,19 @@ class SeqNN(seqnn_util.SeqNNModel):
 
         # save representation
         layer_reprs.append(seqs_repr)
-      
-    if self.hp.multi_head_attention > 0:
-      seqs_repr = layers.multi_head_attention_block(seqs_repr,
-                                                    is_training=self.is_training, 
-                                                    num_heads=self.hp.attention_num_heads,
-                                                    num_units=self.hp.attention_num_units,
-                                                    decay_variable=self.hp.attention_decay_variable,
-                                                    decay_constant=self.hp.attention_decay_constant,
-                                                    dropout=self.hp.attention_dropout,
-                                                    query_dropout=self.hp.attention_query_dropout,
-                                                    l2_scale=self.hp.attention_l2_scale)
+    if  self.hp.multi_head_attention > 0:
+      for i in range(self.hp.multi_head_attention):
+        with tf.variable_scope('multi_head%d' % i, reuse=tf.AUTO_REUSE):
+          seqs_repr = layers.multi_head_attention_block(seqs_repr,
+                                                      is_training=self.is_training, 
+                                                      n_query_layers=self.hp.attention_n_query_layers,
+                                                      num_heads=self.hp.attention_num_heads,
+                                                      num_units=self.hp.attention_num_units,
+                                                      decay_variable=self.hp.attention_decay_variable,
+                                                      decay_constant=self.hp.attention_decay_constant,
+                                                      dropout=self.hp.attention_dropout,
+                                                      query_dropout=self.hp.attention_query_dropout,
+                                                      l2_scale=self.hp.attention_l2_scale)
 
     elif self.hp.dense_attention > 0:
       seqs_repr = layers.dense_attention_block(seqs_repr,
