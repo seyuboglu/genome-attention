@@ -18,6 +18,17 @@ def exp_function(length, decay_constant=0.05):
   X -= np.eye(length)
   return tf.convert_to_tensor(X) 
 
+def inv_exp_function(length, decay=0.01, right=False):
+  X = np.zeros((length, length), dtype=np.float32)
+  for i in range(length):
+    if right:
+      x = np.exp(-1*decay*np.maximum(i - np.arange(length) + (length/2), 0))
+    else:
+      x = np.exp(-1*decay*np.maximum(-i + (np.arange(length) + (length/2)), 0))
+    X[i,:] = x
+    X[i,i] = 0.0
+  return X
+
 def exp_block(seqs_repr, is_training,
               decay_constants, name=''):
   H = seqs_repr
@@ -119,7 +130,7 @@ def dense_attention_block(seqs_repr, is_training, num_layers,
                                          l2_scale)
       layer_reprs.append(seqs_repr)
   return seqs_repr
-
+  
 
 def attention_block(seqs_repr, is_training, n_query_layers,
                     decay_variable, decay_constant, 
@@ -156,15 +167,35 @@ def attention_block(seqs_repr, is_training, n_query_layers,
     tf.logging.info('Query Dropout w/ probability %.3f' % query_dropout)
 
   A = tf.matmul(Q, H, transpose_b=True)
+  tf.logging.info("Adding A ReLU")
+  A = tf.nn.relu(A)
   
   if decay_variable:
-    tf.logging.info("Adding decay variable.")
-    exp_fn = exp_function(length, 1)
-    decay_factor = tf.get_variable("decay_factor", [1], 
+    #tf.logging.info("Adding decay variable.")
+    #exp_fn = exp_function(length, 1)
+    #decay_factor = tf.get_variable("decay_factor", [1], 
+    #                               dtype=tf.float32, 
+    #                               initializer=tf.random_uniform_initializer(0, 1),
+    #                              constraint=lambda x: tf.clip_by_value(x, 0, np.infty))
+    #exp_fn = tf.pow(exp_fn, decay_factor)
+    #A = tf.multiply(A, exp_fn)
+
+    tf.logging.info("Adding flex focus.")
+    left_exp_fn = inv_exp_function(length, right=False)
+    right_exp_fn = inv_exp_function(length, right=True)
+    left_decay_factor = tf.get_variable("left_decay_factor", [1], 
                                    dtype=tf.float32, 
                                    initializer=tf.random_uniform_initializer(0, 1),
                                    constraint=lambda x: tf.clip_by_value(x, 0, np.infty))
-    exp_fn = tf.pow(exp_fn, decay_factor)
+    right_decay_factor = tf.get_variable("right_decay_factor", [1], 
+                                   dtype=tf.float32, 
+                                   initializer=tf.random_uniform_initializer(0, 1),
+                                   constraint=lambda x: tf.clip_by_value(x, 0, np.infty))
+    left_exp_fn = tf.pow(left_exp_fn, left_decay_factor)
+    left_exp_fn = tf.Print(left_exp_fn, [left_decay_factor, right_decay_factor], "Left_exp_fn, right_exp_fn:")
+    right_exp_fn = tf.pow(right_exp_fn, right_decay_factor)
+
+    exp_fn = tf.math.minimum(left_exp_fn, right_exp_fn)
     A = tf.multiply(A, exp_fn)
 
   elif decay_constant > 0:
